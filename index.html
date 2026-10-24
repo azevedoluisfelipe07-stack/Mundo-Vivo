@@ -284,15 +284,63 @@ function VT(){this.m=new Map();this.n=0;this.x=[];this.y=[];this.z=[];this.c=[];
 VT.prototype.add=function(x,y,z,c){var k=(x+48)+(z+48)*128+y*16384;if(this.m.has(k))return;this.m.set(k,1);this.x.push(x);this.y.push(y);this.z.push(z);this.c.push(c);this.n++;};
 VT.prototype.has=function(x,y,z){return this.m.has((x+48)+(z+48)*128+y*16384);};
 VT.prototype.emit=function(b,ox,oy,oz){
- for(var i=0;i<this.n;i++){
-  var x=this.x[i],y=this.y[i],z=this.z[i],c=this.c[i],X=ox+x,Y=oy+y,Z=oz+z,r=c[0],g=c[1],bl=c[2];
-  if(!this.has(x,y+1,z))b.q(X,Y+1,Z,X,Y+1,Z+1,X+1,Y+1,Z+1,X+1,Y+1,Z,0,127,0,r,g,bl);
-  if(y>0&&!this.has(x,y-1,z))b.q(X,Y,Z,X+1,Y,Z,X+1,Y,Z+1,X,Y,Z+1,0,-127,0,r,g,bl);
-  if(!this.has(x+1,y,z))b.q(X+1,Y,Z,X+1,Y+1,Z,X+1,Y+1,Z+1,X+1,Y,Z+1,127,0,0,r,g,bl);
-  if(!this.has(x-1,y,z))b.q(X,Y,Z+1,X,Y+1,Z+1,X,Y+1,Z,X,Y,Z,-127,0,0,r,g,bl);
-  if(!this.has(x,y,z+1))b.q(X,Y,Z+1,X+1,Y,Z+1,X+1,Y+1,Z+1,X,Y+1,Z+1,0,0,127,r,g,bl);
-  if(!this.has(x,y,z-1))b.q(X+1,Y,Z,X,Y,Z,X,Y+1,Z,X+1,Y+1,Z,0,0,-127,r,g,bl);
+ var faces=new Map();
+ function put(dir,plane,u,v,c){
+  var fk=dir+':'+plane,gr=faces.get(fk);if(!gr){gr={dir:dir,plane:plane,cells:new Map()};faces.set(fk,gr);}
+  var rr=Math.round(c[0]*16)/16,gg=Math.round(c[1]*16)/16,bb=Math.round(c[2]*16)/16,ck=rr+','+gg+','+bb;
+  gr.cells.set(u+','+v,{u:u,v:v,r:rr,g:gg,b:bb,key:ck});
  }
+ for(var i=0;i<this.n;i++){
+  var x=this.x[i],y=this.y[i],z=this.z[i],c=this.c[i];
+  if(!this.has(x,y+1,z))put(0,y+1,x,z,c);
+  if(y>0&&!this.has(x,y-1,z))put(1,y,x,z,c);
+  if(!this.has(x+1,y,z))put(2,x+1,z,y,c);
+  if(!this.has(x-1,y,z))put(3,x,z,y,c);
+  if(!this.has(x,y,z+1))put(4,z+1,x,y,c);
+  if(!this.has(x,y,z-1))put(5,z,x,y,c);
+ }
+ faces.forEach(function(group){
+  var cells=group.cells,dir=group.dir,pl=group.plane;
+  while(cells.size){
+   var cell=cells.values().next().value,u=cell.u,v=cell.v,w=1,h=1;
+   while(cells.has((u+w)+','+v)&&cells.get((u+w)+','+v).key===cell.key)w++;
+   var grow=true;while(grow){for(var xx=0;xx<w;xx++){var next=cells.get((u+xx)+','+(v+h));if(!next||next.key!==cell.key){grow=false;break;}}if(grow)h++;}
+   for(var yy=0;yy<h;yy++)for(var xx2=0;xx2<w;xx2++)cells.delete((u+xx2)+','+(v+yy));
+   var X=ox,Y=oy,Z=oz,r=cell.r,g=cell.g,bl=cell.b;
+   if(dir===0)b.q(X+u,Y+pl,Z+v,X+u,Y+pl,Z+v+h,X+u+w,Y+pl,Z+v+h,X+u+w,Y+pl,Z+v,0,127,0,r,g,bl);
+   else if(dir===1)b.q(X+u,Y+pl,Z+v,X+u+w,Y+pl,Z+v,X+u+w,Y+pl,Z+v+h,X+u,Y+pl,Z+v+h,0,-127,0,r,g,bl);
+   else if(dir===2)b.q(X+pl,Y+v,Z+u,X+pl,Y+v+h,Z+u,X+pl,Y+v+h,Z+u+w,X+pl,Y+v,Z+u+w,127,0,0,r,g,bl);
+   else if(dir===3)b.q(X+pl,Y+v,Z+u+w,X+pl,Y+v+h,Z+u+w,X+pl,Y+v+h,Z+u,X+pl,Y+v,Z+u,-127,0,0,r,g,bl);
+   else if(dir===4)b.q(X+u,Y+v,Z+pl,X+u+w,Y+v,Z+pl,X+u+w,Y+v+h,Z+pl,X+u,Y+v+h,Z+pl,0,0,127,r,g,bl);
+   else b.q(X+u+w,Y+v,Z+pl,X+u,Y+v,Z+pl,X+u,Y+v+h,Z+pl,X+u+w,Y+v+h,Z+pl,0,0,-127,r,g,bl);
+  }
+ });
+};
+VT.prototype.collide=function(out,ox,oy,oz){
+ var byY=new Map();
+ for(var i=0;i<this.n;i++){
+  var y=this.y[i],z=this.z[i],xs=byY.get(y);if(!xs){xs=new Map();byY.set(y,xs);}var row=xs.get(z);if(!row){row=[];xs.set(z,row);}row.push(this.x[i]);
+ }
+ var ys=Array.from(byY.keys()).sort(function(a,b){return a-b;}),active=new Map(),finished=[];
+ for(var yi=0;yi<ys.length;yi++){
+  var y=ys[yi],rows=byY.get(y),zs=Array.from(rows.keys()).sort(function(a,b){return a-b;}),runs=[];
+  var zActive=new Map();
+  for(var zi=0;zi<zs.length;zi++){
+   var z=zs[zi],xxs=rows.get(z).sort(function(a,b){return a-b;}),curr=new Map(),st=xxs[0],en=st;
+   for(var xi=1;xi<=xxs.length;xi++){
+    if(xi<xxs.length&&xxs[xi]===en+1){en=xxs[xi];continue;}
+    var rk=st+':'+en,old=zActive.get(rk);if(old&&old.z1===z-1){old.z1=z;curr.set(rk,old);}else{if(old)runs.push(old);curr.set(rk,{x0:st,x1:en,z0:z,z1:z});}
+    if(xi<xxs.length){st=en=xxs[xi];}
+   }
+   zActive.forEach(function(v,k){if(!curr.has(k))runs.push(v);});zActive=curr;
+  }
+  zActive.forEach(function(v){runs.push(v);});
+  var current=new Map();for(var ri=0;ri<runs.length;ri++){var rr=runs[ri],key=rr.x0+':'+rr.x1+':'+rr.z0+':'+rr.z1;current.set(key,rr);}
+  var nextActive=new Map();current.forEach(function(rect,key){var prev=active.get(key);if(prev&&prev.y1===y-1){prev.y1=y;nextActive.set(key,prev);}else{if(prev)finished.push(prev);nextActive.set(key,{x0:rect.x0,x1:rect.x1,z0:rect.z0,z1:rect.z1,y0:y,y1:y});}});
+  active.forEach(function(v,key){if(!current.has(key))finished.push(v);});active=nextActive;
+ }
+ active.forEach(function(v){finished.push(v);});
+ for(var j=0;j<finished.length;j++){var q=finished[j],sx=q.x1-q.x0+1,sz=q.z1-q.z0+1,hh=q.y1-q.y0+1;out.push(ox+q.x0+sx/2,oz+q.z0+sz/2,oy+q.y0,hh,sx/2,sz/2,0,0);}
 };
 function mkTree(type,R,V){
  var c3=function(c,v){var k=1+(R()-.5)*v;return[c[0]*k,c[1]*k,c[2]*k];};
@@ -330,35 +378,53 @@ function mkTree(type,R,V){
   break;}
  }
 }
-function simpleTree(type,R,b,x,y,z,sc){
+function treeShape(type,seed,skip){
+ var R=rngOf(seed),h=0,r=TP[type].r,big=false;if(skip)R();
+ switch(type){
+ case 'oak':h=4+(R()*3|0);r=2+(R()*1.6|0);break;
+ case 'birch':h=5+(R()*3|0);r=2;break;
+ case 'autumn':h=4+(R()*3|0);r=2+(R()*1.6|0);break;
+ case 'cherry':h=4+(R()*2|0);r=3;break;
+ case 'swamp':h=4+(R()*3|0);r=3;break;
+ case 'spruce':case 'spruceS':h=6+(R()*6|0);r=2.5;break;
+ case 'jungle':big=R()<.12;h=big?22+(R()*8|0):11+(R()*9|0);r=big?6:4;break;
+ case 'acacia':h=5+(R()*3|0);r=3.5;break;
+ case 'cactus':h=2+(R()*4|0);r=.5;break;
+ case 'palm':h=6+(R()*4|0);r=4;break;
+ case 'mushroom':h=4+(R()*4|0);R();r=3+(R()*2|0);break;
+ }
+ return{h:h,r:r,big:big};
+}
+function simpleTree(type,R,b,x,y,z,sc,colliders,shape){
+ var draw=function(x0,y0,z0,sx,sy,sz,r,g,bl,nb){box(b,x0,y0,z0,sx,sy,sz,r,g,bl,nb);if(colliders)colliders.push(x0+sx/2,z0+sz/2,y0,sy,sx/2,sz/2,0,0);};
  var p=TP[type],l=p.l,t=p.t;
  if(type==='autumn')l=AUT[R()*4|0];
  var k=.92+R()*.16;l=[l[0]*k,l[1]*k,l[2]*k];
- var th=Math.max(2,Math.round(p.th*(.8+R()*.5)*sc)),r=p.r*sc;
+ var th=shape?shape.h:Math.max(2,Math.round(p.th*(.8+R()*.5)*sc)),r=shape?shape.r:p.r*sc;
  switch(type){
  case 'spruce':case 'spruceS':
-  box(b,x,y,z,1,th*.5,1,t[0],t[1],t[2],true);
-  box(b,x-2.5,y+2,z-2.5,6,th*.38,6,l[0],l[1],l[2],true);
-  box(b,x-1.5,y+2+th*.38,z-1.5,4,th*.34,4,l[0],l[1],l[2],true);
-  box(b,x-.5,y+2+th*.72,z-.5,2,th*.4,2,l[0],l[1],l[2],true);break;
+  draw(x,y,z,1,th*.5,1,t[0],t[1],t[2],true);
+  draw(x-2.5,y+2,z-2.5,6,th*.38,6,l[0],l[1],l[2],true);
+  draw(x-1.5,y+2+th*.38,z-1.5,4,th*.34,4,l[0],l[1],l[2],true);
+  draw(x-.5,y+2+th*.72,z-.5,2,th*.4,2,l[0],l[1],l[2],true);break;
  case 'jungle':
-  box(b,x,y,z,1,th,1,t[0],t[1],t[2],true);
-  box(b,x+.5-r,y+th-1,z+.5-r,2*r,3,2*r,l[0],l[1],l[2],true);
-  box(b,x+.5-r*.5,y+th+2,z+.5-r*.5,r,1,r,l[0],l[1],l[2],true);break;
+  draw(x,y,z,1,th,1,t[0],t[1],t[2],true);
+  draw(x+.5-r,y+th-1,z+.5-r,2*r,3,2*r,l[0],l[1],l[2],true);
+  draw(x+.5-r*.5,y+th+2,z+.5-r*.5,r,1,r,l[0],l[1],l[2],true);break;
  case 'acacia':
-  box(b,x,y,z,1,th,1,t[0],t[1],t[2],true);
-  box(b,x+.5-r,y+th,z+.5-r,2*r,1.6,2*r,l[0],l[1],l[2],true);break;
+  draw(x,y,z,1,th,1,t[0],t[1],t[2],true);
+  draw(x+.5-r,y+th,z+.5-r,2*r,1.6,2*r,l[0],l[1],l[2],true);break;
  case 'cactus':
-  box(b,x,y,z,1,th,1,t[0],t[1],t[2],true);break;
+  draw(x,y,z,1,th,1,t[0],t[1],t[2],true);break;
  case 'mushroom':
-  box(b,x,y,z,1,th,1,t[0],t[1],t[2],true);
-  box(b,x+.5-r,y+th,z+.5-r,2*r,2,2*r,l[0],l[1],l[2],true);break;
+  draw(x,y,z,1,th,1,t[0],t[1],t[2],true);
+  draw(x+.5-r,y+th,z+.5-r,2*r,2,2*r,l[0],l[1],l[2],true);break;
  case 'palm':
-  box(b,x,y,z,1,th,1,t[0],t[1],t[2],true);
-  box(b,x+.5-2.5,y+th,z+.5-2.5,5,1.2,5,l[0],l[1],l[2],true);break;
+  draw(x,y,z,1,th,1,t[0],t[1],t[2],true);
+  draw(x+.5-2.5,y+th,z+.5-2.5,5,1.2,5,l[0],l[1],l[2],true);break;
  default:
-  box(b,x,y,z,1,th,1,t[0],t[1],t[2],true);
-  box(b,x+.5-r,y+th-1,z+.5-r,2*r,r*1.7,2*r,l[0],l[1],l[2],true);
+  draw(x,y,z,1,th,1,t[0],t[1],t[2],true);
+  draw(x+.5-r,y+th-1,z+.5-r,2*r,r*1.7,2*r,l[0],l[1],l[2],true);
  }
 }
 
@@ -460,31 +526,27 @@ function build(cx,cz,lod,veg){
   }
  }
  var treeTop=0,treeColliders=[];
+ function solidBox(x,y,z,sx,sy,sz,r,g,b,nb){box(tb,x,y,z,sx,sy,sz,r,g,b,nb);treeColliders.push(x+sx/2,z+sz/2,y,sy,sx/2,sz/2,0,0);}
  for(var gz=Math.floor(z0/4);gz<Math.floor(z0/4)+CH/4;gz++)for(var gxx=Math.floor(x0/4);gxx<Math.floor(x0/4)+CH/4;gxx++){
   var r1=hash(gxx,gz,11),tx=gxx*4+((hash(gxx,gz,12)*4)|0),tz=gz*4+((hash(gxx,gz,13)*4)|0);
   var ci=Math.floor((tx-x0)/step)+1,cj=Math.floor((tz-z0)/step)+1,ck=cj*G+ci;
-  var th=Hh[ck],tk=Kd[ck];
-  if(tk===4||tk===1||tk===2&&Bi[ck]>1)continue;
-  var T4=Tt[ck]+(hash(gxx,gz,14)-.5)*.07,M4=Mm[ck]+(hash(gxx,gz,15)-.5)*.07,tbi=classify(T4,M4,Ww[ck]);
+  var th,T4,M4,W4;if(lod===0){th=Hh[ck];T4=Tt[ck];M4=Mm[ck];W4=Ww[ck];}else{surf(tx+.5,tz+.5);th=SF.h;T4=SF.T;M4=SF.M;W4=SF.W;}var tbi=classify(T4,M4,W4);
+  if(th<SEA)continue;cellGround(T4,M4,W4,tx+.5,tz+.5);var nearCoast=th<=SEA+3;
   var type=null,e=B[tbi];
-  if(tk===3&&th>=SEA&&th<=SEA+4&&Tt[ck]>.6&&tbi!==11&&tbi!==12){if(r1<.035*veg)type='palm';}
-  else if(tk===0||tk===2||tk===5||tk===3){
-   var pr=e.p;if(tk===3&&tbi!==11&&tbi!==12)continue;
+  if(nearCoast&&T4>.6&&tbi!==11&&tbi!==12){if(r1<.035*veg)type='palm';}
+  else if(th>=SEA){
+   var pr=e.p;if(nearCoast&&tbi!==11&&tbi!==12)continue;
    var lim=tbi<=2?135:118;if(th>lim)continue;
    var mm2=.35+1.0*ss(.12,.62,.5+.5*sn(tx*.011+3,tz*.011))*ss(-.35,.1,sn(tx*.05,tz*.05)+.2);
    if(r1<pr*veg*mm2)type=e.tr;
   }
   if(!type)continue;
-  if(lod>=3&&hash(gxx,gz,16)>(lod===3?.55:.3))continue;
-  var R=rngOf(hash(tx,tz,41)*4294967295);
-  if(type==='forest')type=R()<.7?'oak':'birch';
+  var treeSeed=hash(tx,tz,41)*4294967295,R=rngOf(treeSeed),forestType=type==='forest';
+  if(forestType)type=R()<.7?'oak':'birch';
+  var shape=treeShape(type,treeSeed,forestType);
   var ltx=tx-x0,ltz=tz-z0;
-  // Colisor cilíndrico para o tronco, compartilhado com a malha do chunk.
-  var canopyBottom=type==='spruce'||type==='spruceS'?th+2:type==='jungle'?th+TP[type].th-5:th+TP[type].th-2;
-  var canopyHeight=type==='spruce'||type==='spruceS'?TP[type].th:type==='jungle'?9:Math.max(3,TP[type].r*1.7);
-  if(lod<=1)treeColliders.push(ltx+.5,ltz+.5,th,TP[type].th*1.4+2,type==='jungle'?1.05:.68,canopyBottom,canopyHeight,type==='cactus'?0:TP[type].r+.35);
-  if(lod<=1){var V=new VT();mkTree(type,R,V);V.emit(tb,ltx,th,ltz);}
-  else simpleTree(type,R,tb,ltx,th,ltz,lod>=4?1.6:lod===3?1.25:1);
+  if(lod<=1){var V=new VT();mkTree(type,R,V);V.collide(treeColliders,ltx,th,ltz);V.emit(tb,ltx,th,ltz);}
+  else simpleTree(type,R,tb,ltx,th,ltz,1,treeColliders,shape);
   if(th>treeTop)treeTop=th;
  }
  if(lod===0){
@@ -496,8 +558,8 @@ function build(cx,cz,lod,veg){
    if(u<a){if(!grass)continue;var cnt=2+(R5()*2|0);for(var q=0;q<cnt;q++){box(tb,lx5+R5()*.8+.1,hh,lz5+R5()*.8+.1,.1,.3+R5()*.45,.1,CR[k]*.95,CG[k]*1.08,CB[k]*.9,true);}}
    else if(u<(a+=pq.fl*vg)){if(!grass)continue;var fc=(bi5===13)?FLP[R5()*3|0]:FL[R5()*7|0],fx=lx5+.3+R5()*.4,fz=lz5+.3+R5()*.4;box(tb,fx,hh,fz,.08,.45,.08,.2,.5,.15,true);box(tb,fx-.1,hh+.4,fz-.1,.28,.22,.28,fc[0],fc[1],fc[2]);}
    else if(u<(a+=pq.bu*vg)){if(!grass)continue;var bl=(bi5<=2)?TP.spruce.l:TP.oak.l,bk=.9+R5()*.2;box(tb,lx5-.1,hh,lz5-.1,1.2,.8,1.2,bl[0]*bk,bl[1]*bk,bl[2]*bk,true);box(tb,lx5+.1,hh+.8,lz5+.1,.8,.3,.8,bl[0]*bk,bl[1]*bk,bl[2]*bk);}
-   else if(u<(a+=pq.rk*vg)){var s5=.5+R5()*.8,gk=.42+R5()*.14;box(tb,lx5+.1,hh,lz5+.1,s5+.4,s5*.6+.2,s5+.2,gk,gk,gk*1.02);}
-   else if(u<(a+=pq.lg*vg)){if(!grass||i+3>n)continue;var okk=true;for(var q2=1;q2<4;q2++)if(Hh[k+q2]!==hh)okk=false;if(!okk)continue;box(tb,lx5,hh,lz5+.1,4,.8,.8,.36,.25,.13);box(tb,lx5+3.98,hh+.05,lz5+.15,.04,.7,.7,.72,.6,.4);}
+   else if(u<(a+=pq.rk*vg)){var s5=.5+R5()*.8,gk=.42+R5()*.14;solidBox(lx5+.1,hh,lz5+.1,s5+.4,s5*.6+.2,s5+.2,gk,gk,gk*1.02);}
+   else if(u<(a+=pq.lg*vg)){if(!grass||i+3>n)continue;var okk=true;for(var q2=1;q2<4;q2++)if(Hh[k+q2]!==hh)okk=false;if(!okk)continue;solidBox(lx5,hh,lz5+.1,4,.8,.8,.36,.25,.13);solidBox(lx5+3.98,hh+.05,lz5+.15,.04,.7,.7,.72,.6,.4);}
    else if(u<(a+=pq.mu*vg)){if(!grass)continue;var red=R5()<.6;box(tb,lx5+.4,hh,lz5+.4,.12,.28,.12,.93,.9,.82,true);box(tb,lx5+.25,hh+.26,lz5+.25,.42,.16,.42,red?.82:.6,red?.12:.4,red?.1:.25);}
    else if(u<(a+=pq.db*vg)){if(kd!==3&&kd!==5&&!(kd===0))continue;var nn=2+(R5()*2|0);for(var q3=0;q3<nn;q3++)box(tb,lx5+R5()*.8,hh,lz5+R5()*.8,.07,.35+R5()*.4,.07,.45,.33,.18,true);}
   }
@@ -511,7 +573,7 @@ function build(cx,cz,lod,veg){
    var R6=rngOf(hash(fx0,fz0,34)*4294967295),w0=3+(R6()*3|0),HH=6+(R6()*12|0),by=Hh[fk]-4,yy=0,lxf=fx0-x0,lzf=fz0-z0;
    while(yy<HH){var lh=2+(R6()*3|0),w=Math.max(1.5,w0-(R6()<.45?1:0));w0=w;
     var cc=fb===12?BAND[(Math.floor((by+yy)/3)%7+7)%7]:[.85,.72,.46];
-    box(tb,lxf-w/2,by+yy,lzf-w/2,w,lh,w,cc[0],cc[1],cc[2],true);yy+=lh;}
+    solidBox(lxf-w/2,by+yy,lzf-w/2,w,lh,w,cc[0],cc[1],cc[2],true);yy+=lh;}
    if(by+HH>treeTop)treeTop=by+HH;
   }
  }
@@ -923,10 +985,8 @@ function hitsTree(x,z){
   var c=world.chunks.get((cx+ox)+','+(cz+oz));if(!c||!c.colliders||!c.colliders.length)continue;
   var a=c.colliders,bx=c.cx*CH,bz=c.cz*CH;
   for(var i=0;i<a.length;i+=8){
-   var ddx=x-(bx+a[i]),ddz=z-(bz+a[i+1]),d2=ddx*ddx+ddz*ddz,rr=PLAYER_RADIUS+a[i+4];
-   if(bodyTop>a[i+2]&&bodyBottom<a[i+2]+a[i+3]&&d2<rr*rr)return true;
-   if(a[i+7]>0){var fr=PLAYER_RADIUS+a[i+7];
-    if(bodyTop>a[i+5]&&bodyBottom<a[i+5]+a[i+6]&&d2<fr*fr)return true;}
+   var dx=Math.abs(x-(bx+a[i])),dz=Math.abs(z-(bz+a[i+1])),qx=Math.max(0,dx-a[i+4]),qz=Math.max(0,dz-a[i+5]);
+   if(bodyTop>a[i+2]&&bodyBottom<a[i+2]+a[i+3]&&qx*qx+qz*qz<PLAYER_RADIUS*PLAYER_RADIUS)return true;
   }
  }
  return false;
@@ -937,10 +997,9 @@ function canopyCollision(x,z,oldY,newY){
   var c=world.chunks.get((cx+ox)+','+(cz+oz));if(!c||!c.colliders||!c.colliders.length)continue;
   var a=c.colliders,bx=c.cx*CH,bz=c.cz*CH;
   for(var i=0;i<a.length;i+=8){
-   if(!(a[i+7]>0))continue;
-   var dx=x-(bx+a[i]),dz=z-(bz+a[i+1]),rr=PLAYER_RADIUS+a[i+7];
-   if(dx*dx+dz*dz>=rr*rr)continue;
-   var bottom=a[i+5],top=bottom+a[i+6];
+   var dx=Math.abs(x-(bx+a[i])),dz=Math.abs(z-(bz+a[i+1])),qx=Math.max(0,dx-a[i+4]),qz=Math.max(0,dz-a[i+5]);
+   if(qx*qx+qz*qz>=PLAYER_RADIUS*PLAYER_RADIUS)continue;
+   var bottom=a[i+2],top=bottom+a[i+3];
    if(newY<oldY&&oldY>=top-.04&&newY<=top)topHit=Math.max(topHit,top);
    if(newY>oldY&&oldY+1.7<=bottom&&newY+1.7>bottom)ceilingHit=Math.min(ceilingHit,bottom);
   }
@@ -1111,7 +1170,8 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js').catch(error => console.warn('Cache offline indisponível:', error));
   });
 }
-</script></body>
+</script>
+</body>
 </html>
 
 
