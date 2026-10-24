@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mundo-vivo-pwa-v1';
+const CACHE_NAME = 'mundo-vivo-pwa-v2';
 const APP_SHELL = [
   './',
   './index.html',
@@ -49,3 +49,4 @@ self.addEventListener('fetch', event => {
     }))
   );
 });
+
